@@ -1,7 +1,9 @@
 import type { Maybe } from "Maybe"
 
+import Byte from "Byte"
 import ByteArray from "ByteArray"
 import Dict from "Dictionary"
+import Integer from "Integer"
 import List from "List"
 import { Just, Nothing, fromMaybe } from "Maybe"
 
@@ -15,20 +17,51 @@ export alias Evict a b = a -> b -> {}
 
 export alias EventMap = { evict :: a -> b -> {} }
 
-export alias Storage = { free :: ByteArray, head :: Byte, max :: Byte, size :: Byte, tail :: Byte }
+export alias Storage a b = {
+  free :: ByteArray,
+  head :: Integer,
+  keys :: List a,
+  max :: Byte,
+  next :: ByteArray,
+  prev :: ByteArray,
+  size :: Byte,
+  tail :: Integer,
+  values :: List b,
+}
 export type Cache a b
   = Cache(
     // weights & states
-    Storage,
+    Storage a b,
     // let your fans know
     EventMap,
     // data
     Dictionary a b,
   )
 
+// CONSTRUCTORS
+
+createStore :: Byte -> Storage a b
+export createStore = (max) => {
+  // the cheat is to the limit
+  limit = Integer.fromByte(max)
+  return (
+    {
+      free: ByteArray.init(limit),
+      head: 0,
+      max,
+      next: ByteArray.init(limit),
+      prev: ByteArray.init(limit),
+      tail: 0,
+      keys: [],
+      values: [],
+      size: 0_b,
+    }
+  )
+}
+
 // FIELDS
 
-store :: Cache a b -> Storage
+store :: Cache a b -> Storage a b
 export store = where {
   Cache(s, _, _) =>
     s
@@ -46,43 +79,91 @@ export data = where {
     d
 }
 
-expunge :: Storage -> Storage
-expunge = (x) => x
+// UTILITIES
+
+// _expunge :: Storage a b -> Storage a b
+_expunge = (x) => #[0, x]
+
+_evictOrPop = (x) => {
+  // w = ByteArray.unsafeAt(fLen, state.free)
+  //            free2 = ByteArray.slice(0, fLen, state.free)
+  // { ...state, free: free2 }
+  return #[0, x]
+}
+
+_updateState = (x) => {
+  return #[0, x]
+}
+
+handleEmptyIndex = (state) => {
+  fLen = ByteArray.length(state.free)
+  return if (state.size == state.max) {
+    _expunge(state)
+  } else if (fLen > 0) {
+    _evictOrPop(state)
+  } else {
+    _updateState(state)
+  }
+}
+
+// tailStorage :: Boolean -> Integer -> Storage a b -> Storage a b
+export tailStorage = (setterMode, index, _store) => {
+  return if (index == _store.tail) {
+    _store
+  } else do {
+    nextIndex = ByteArray.unsafeAt(index, _store.next)
+    prevIndex = ByteArray.unsafeAt(index, _store.prev)
+    if (index == _store.head) do {
+      _store.head := Integer.fromByte(nextIndex)
+    } else if (!setterMode || prevIndex != 0) do {
+      _store.next := ByteArray.unsafeSet(Integer.fromByte(prevIndex), nextIndex, _store.next)
+    }
+    if (nextIndex != 0) do {
+      _store.next := ByteArray.unsafeSet(Integer.fromByte(nextIndex), prevIndex, _store.prev)
+    }
+    _store.next := ByteArray.unsafeSet(_store.tail, Byte.fromInteger(index), _store.next)
+    _store.prev := ByteArray.unsafeSet(index, Byte.fromInteger(_store.tail), _store.prev)
+    _store.next := ByteArray.unsafeSet(index, 0, _store.next)
+    _store.tail := index
+    return _store
+  }
+}
 
 /**
  * Adds a a value to the cache.
  * Updates the value if the key already exists
  */
-set :: Comparable a => a -> b -> Cache a b -> Cache a b
+// set :: Comparable a => a -> Byte -> Cache a Byte -> Cache a Byte
+set :: Integer -> Integer -> Cache Integer Integer -> Cache Integer Integer
 export set = (k, v, c) => where(c) {
   Cache(state, ev, d) =>
     pipe(
       Dict.get(k),
       where {
         Nothing =>
-          do {
-            // index = size === max ?
-            //     _evict() :
-            //     free.length > 0 ?
-            //     free.pop()! :
-            //     size;
-            fLen = ByteArray.length(state.free)
-            return if (state.size == state.max) do {
-              st2 = expunge(state)
-              return Cache(st2, ev, d)
-              // } else if (fLen > 0) do {
-              //   w = ByteArray.unsafeAt(fLen, state.free)
-              //   free2 = List.tail(state.free)
-            } else {
-              Cache(state, ev, d)
-            }
-          }
+          handleEmptyIndex(state)
 
         Just(w) =>
           do {
             // notice
             ev.evict(k, w)
-            return Cache(state, ev, d)
+            return #[w, state]
+          }
+      },
+      where {
+        #[index, newState] =>
+          do {
+            copyState = newState
+            newValues = List.set(index, v, copyState.values)
+
+            if (state.size == 1) do {
+              copyState.head := index
+              copyState.tail := index
+            } else do {
+              copyState := tailStorage(true, index, copyState)
+            }
+
+            return Cache({ ...copyState, values: newValues }, ev, d)
           }
       },
     )(d)
