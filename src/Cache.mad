@@ -1,0 +1,117 @@
+import type { Maybe } from "Maybe"
+
+import ByteArray from "ByteArray"
+import Dict from "Dictionary"
+import List from "List"
+import { Just, Nothing, fromMaybe } from "Maybe"
+
+import { softSet } from "@/Dictionary"
+
+
+
+// export alias CacheOptions = { limit :: Byte, onEvict :: a -> b -> {} }
+
+export alias Evict a b = a -> b -> {}
+
+export alias EventMap = { evict :: a -> b -> {} }
+
+export alias Storage = { free :: ByteArray, head :: Byte, max :: Byte, size :: Byte, tail :: Byte }
+export type Cache a b
+  = Cache(
+    // weights & states
+    Storage,
+    // let your fans know
+    EventMap,
+    // data
+    Dictionary a b,
+  )
+
+// FIELDS
+
+store :: Cache a b -> Storage
+export store = where {
+  Cache(s, _, _) =>
+    s
+}
+
+events :: Cache a b -> EventMap
+export events = where {
+  Cache(_, p, _) =>
+    p
+}
+
+data :: Cache a b -> Dictionary a b
+export data = where {
+  Cache(_, _, d) =>
+    d
+}
+
+expunge :: Storage -> Storage
+expunge = (x) => x
+
+/**
+ * Adds a a value to the cache.
+ * Updates the value if the key already exists
+ */
+set :: Comparable a => a -> b -> Cache a b -> Cache a b
+export set = (k, v, c) => where(c) {
+  Cache(state, ev, d) =>
+    pipe(
+      Dict.get(k),
+      where {
+        Nothing =>
+          do {
+            // index = size === max ?
+            //     _evict() :
+            //     free.length > 0 ?
+            //     free.pop()! :
+            //     size;
+            fLen = ByteArray.length(state.free)
+            return if (state.size == state.max) do {
+              st2 = expunge(state)
+              return Cache(st2, ev, d)
+              // } else if (fLen > 0) do {
+              //   w = ByteArray.unsafeAt(fLen, state.free)
+              //   free2 = List.tail(state.free)
+            } else {
+              Cache(state, ev, d)
+            }
+          }
+
+        Just(w) =>
+          do {
+            // notice
+            ev.evict(k, w)
+            return Cache(state, ev, d)
+          }
+      },
+    )(d)
+}
+
+// cache :: CacheOptions -> Maybe (Dictionary a b)
+// export cache = (opts) => where(opts) {
+//   { limit, onEvict } =>
+//     do {
+//       state = Dict.empty
+//       return if (limit < 0) {
+//         Nothing
+//       } else do {
+//
+//         return {
+//           set,
+//           get,
+//           peek,
+//           has,
+//           keys,
+//           values,
+//           toList,
+//           delete,
+//           evict,
+//           clear,
+//           max,
+//           size,
+//           available,
+//         }
+//       }
+//     }
+// }

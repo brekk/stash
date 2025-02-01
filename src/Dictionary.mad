@@ -1,0 +1,18 @@
+import type { Maybe } from "Maybe"
+
+import Dict from "Dictionary"
+import { Just, Nothing } from "Maybe"
+
+
+
+softSet :: Comparable k => k -> v -> Dictionary k v -> Dictionary k v
+export softSet = (k, v, x) => pipe(
+  Dict.get(k),
+  where {
+    Just(w) =>
+      Dict.insert(k, w, x)
+
+    Nothing =>
+      Dict.insert(k, v, x)
+  },
+)(x)
