@@ -1,0 +1,66 @@
+import type { Maybe } from "Maybe"
+
+import Dict from "Dictionary"
+import { Just, Nothing } from "Maybe"
+import Tuple from "Tuple"
+
+
+
+export type Linkage k v
+  = Linkage(
+    // value
+    v,
+    // prev
+    Maybe k,
+    // next
+    Maybe k,
+  )
+
+// export alias LRUConfig key value = {
+//   first :: Maybe key,
+//   last :: Maybe key,
+//   maxSize :: Maybe Integer,
+//   content :: Dictionary key (Linkage key val))
+// }
+
+export type LRU k v
+  = Stash(
+    // first,
+    Maybe k,
+    // last,
+    Maybe k,
+    // maxSize
+    Maybe Integer,
+    // content
+    Dictionary k (Linkage k v),
+  )
+  | InvalidCache
+
+create :: Comparable k => Maybe Integer -> LRU k v
+export create = where {
+  Nothing =>
+    Stash(Nothing, Nothing, Nothing, Dict.empty)
+
+  Just(x) =>
+    x < 0 ? InvalidCache : Stash(Nothing, Nothing, Just(x), Dict.empty)
+}
+
+
+/*
+fromList :: Comparable k => Maybe Integer -> List #[k, v] -> LRU k v
+fromList = (max, list) => pipe(
+  reduce((d, p) => Dict.insert(p, d), Dict.empty)
+)
+*/
+
+// toList :: Comparable k => LRU k v -> List #[k, v]
+
+// pairs :: Comparable k => #[k, v] => 
+
+// keys :: Comparable k => k -> 
+
+insert :: Comparable k => k -> v -> LRU k v -> LRU k v
+insert = (k, v, c) => pipe(
+  insertInforming(k, v),
+  Tuple.fst,
+)(c)
